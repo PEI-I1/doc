@@ -1,0 +1,126 @@
+version: '3.5'
+services:
+  telegram_api_endpoint:
+    image: pei1/telegram_api_endpoint:latest
+    container_name: telegram_api_endpoint
+    restart: always
+    networks:
+      main:
+        aliases:
+          - telegram_api_endpoint
+    environment:
+      BOT_TOKEN: "${BOT_TOKEN}"
+      NGROK_URL: "${NGROK_URL}"
+      CHAT_PROCESSOR_URL: "http://chat_processor:5001"
+      PYTHONUNBUFFERED: 1
+    ports:
+      - "5000:5000"
+  chat_processor:
+    image: pei1/chat_processor:latest
+    container_name: chat_processor
+    restart: always
+    volumes:
+      - chat-processor-data:/root/
+    depends_on:
+      - fs_webscrapper
+      - cinemas_webscrapper
+      - redis
+      - nos_tech_problems_ntp_bot
+      - nos_tech_problems_tech_problems
+    networks:
+      main:
+        aliases:
+          - chat_processor
+    environment:
+      API_ENDPOINT: "http://telegram_api_endpoint:5000"
+      FS_SCRAPER: "http://fs_webscrapper:5002"
+      CINEMA_SCRAPER: "http://cinemaswebscrapper:5003"
+      RS: "http://ntpbot:5004"
+      REDIS_HOST: "redis"
+      REDIS_PORT: 6379
+      PYTHONUNBUFFERED: 1
+    ports:
+      - "5001:5001"
+  fs_webscrapper:
+    image: pei1/fs_webscrapper:latest
+    container_name: fs_webscrapper
+    restart: always
+    networks:
+      main:
+        aliases:
+          - fs_webscrapper
+    environment:
+      PYTHONUNBUFFERED: 1
+      INITIAL_UPDATE: "false"
+    ports:
+      - "5002:5002"
+  cinemas_webscrapper:
+    image: pei1/cinemas_webscrapper:latest
+    container_name: cinemas_webscrapper
+    depends_on:
+      - redis
+    restart: always
+    networks:
+      main:
+        aliases:
+          - cinemaswebscrapper
+    environment:
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      DJANGO_SETTINGS_MODULE: "cinemas_scrapper.settings.production"
+      OMDB_TOKEN: "${OMDB_TOKEN}"
+      PYTHONUNBUFFERED: 1
+      INITIAL_UPDATE: "false"
+    command: "sh -c './manage.py makemigrations && ./manage.py migrate && ./manage.py loaddata static/db_dump.json && (celery -A cinemas_scrapper.celery worker -B -l info &) && ./manage.py runserver 0.0.0.0:5003 --noreload'"
+    ports:
+      - "5003:5003"
+  nos_tech_problems_ntp_bot:
+    image: pei1/nos_tech_problems:ntp_bot
+    container_name: nos_tech_problems_ntp_bot
+    restart: always
+    networks:
+      main:
+        aliases:
+          - ntpbot
+    volumes:
+      - ${PWD}/model_files/input_options.json:/home/solver/NTP_Bot/input_options.json
+      - ${PWD}/tree_options.json:/home/solver/NTP_Bot/tree_options.json
+    environment:
+      SOLVER_HOST: "ntpsolver"
+      SOLVER_PORT: "5005"
+      REDIS_HOST: "redis"
+      REDIS_PORT: 6379
+      PYTHONUNBUFFERED: 1
+    ports:
+      - "5004:5004"
+  nos_tech_problems_tech_problems:
+    image: pei1/nos_tech_problems:tech_problems
+    container_name: nos_tech_problems_tech_problems
+    restart: always
+    networks:
+      main:
+        aliases:
+          - ntpsolver
+    volumes:
+      - ${PWD}/model_files:/home/solver/Tech_Problems/technical_problems/model_files
+    environment:
+      DJANGO_SETTINGS_MODULE: "Tech_Problems.settings.production"
+      PYTHONUNBUFFERED: 1
+    ports:
+      - "5005:5005"
+  redis:
+    image: redis
+    container_name: redis
+    restart: always
+    networks:
+      main:
+        aliases:
+          - redis
+    ports:
+      - "6379:6379"
+volumes:
+  chat-processor-data:
+    external: false
+    name: chat-processor-data
+networks:
+  main:
